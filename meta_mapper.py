@@ -4,6 +4,7 @@
 """
 
 import configparser
+import dateutil.parser as date_parser
 import json
 import os
 from pathlib import Path
@@ -37,13 +38,16 @@ class MetaMapper:
         new_format_template = self.config["format"]["template"]
         with open (new_format_template) as f:
             self.template = dict.fromkeys(json.load(f).keys(), None)
-        self.user_data_key = self.config["format"]["user_data_key"]        
+        self.user_metadata_key = self.config["format"]["user_metadata_key"]        
         self.defaults_tag = self.config["format"]["defaults_tag"]
 
         # The categories section of the config maps file path patterns to the various 
         # kinds of metadata.
         self.categories = self.config["categories"]
 
+        # The dates section tells uys how to recognize date fields and how to format them.
+        self.date_key_pattern = self.config["dates"]["date_key_pattern"]
+        self.date_format = self.config["dates"]["date_format"]
  
     def create_new_document(self, archive_dir):
 
@@ -65,6 +69,8 @@ class MetaMapper:
 
         # Find which kind of metadata to expect from the directory path.
         category_tag = self.__get_category_tag(archive_dir)
+        if not category_tag:
+            return # This kind of metadata is not yet handled.
 
         # Seek and read any metadata docs in the directory named in the config file.
         for doc_tag, doc_filename in self.config["doc_names"].items():
@@ -75,11 +81,17 @@ class MetaMapper:
                 # doc not found in this directory
                 continue
 
+            # Get the section of the config file to seek by combining the category and doc tags.
+            section_tag = category_tag + '_' + doc_tag
+
             # Add vals from curr doc to new doc
-            self.__add_vals_from_curr_doc(new_doc, category_tag, doc_tag, curr_doc)
+            try:
+                self.__add_vals_from_curr_doc(new_doc, section_tag, curr_doc)
+            except ValueError as e:
+                print(f"Key error for {archive_dir}: {str(e)}")
              
             # Tuck curr doc into user_data field, if specified in the config file.
-            self.__add_user_data(new_doc, curr_doc)
+            self.__add_user_metadata(new_doc, section_tag, curr_doc)
 
         # Add any known constants
         self.__add_default_vals(new_doc)
@@ -142,11 +154,11 @@ class MetaMapper:
                     new_doc[curr_key] = False
         
 
-    def __add_user_data(self, new_doc, curr_doc):
+    def __add_user_metadata(self, new_doc, section_tag, curr_doc):
 
         """
         
-        Tuck an old into the user_data field of the new doc.
+        Tuck an old metadata doc into the user_metadata field of the new doc.
 
         Parameters:
             new_doc (dict). The new document being created.
@@ -158,11 +170,15 @@ class MetaMapper:
 
         # If the user_data field is set to True in the config section for the old metadata
         # file, tuck its contents into the user_data field of the new doc.
-        if self.user_data_key in curr_doc and curr_doc[self.user_data_key].lower() == "true":
-            new_doc[self.user_data_key] = curr_doc
+        try:
+            if self.config[section_tag][self.user_metadata_key].lower() == "true":
+                new_doc[self.user_metadata_key] = curr_doc
+        except KeyError as e:
+            # user_metadata key not found in the section of the config for this doc. Do nothing.
+            pass
 
 
-    def __add_vals_from_curr_doc(self, new_doc, category_tag, doc_tag, curr_doc):
+    def __add_vals_from_curr_doc(self, new_doc, section_tag, curr_doc):
 
         """
         Add values to the new doc from fields in the current doc specified in the config file.
@@ -177,17 +193,33 @@ class MetaMapper:
 
         """
 
-        # Get the section of the config file to seek by combining the category and doc tags.
-        section_tag = category_tag + '_' + doc_tag
-
         # Check this doc's section in the config file to determine which of its keys we want.
         for template_key, doc_key in self.config[section_tag].items():
 
+            # Hack: we don't want to process the user_metadata key here.
+            if template_key == self.user_metadata_key:
+                continue
+
+            # If the new doc already has a value for this key, but the curr doc has a different
+            # value, and both are not None, raise a ValueError (To be caught and logged, not to
+            # crash the program. 
+            if ((template_key in new_doc and new_doc[template_key] != None) and
+                (doc_key in curr_doc and curr_doc[doc_key] != None) and 
+                new_doc[template_key] != curr_doc[doc_key]):
+                raise ValueError(f"Error: conflicting values for {template_key}")
+ 
+ 
             # If the new doc doesn't already have a value for this key,use the value from the
             # current doc.
 
             if template_key in new_doc and new_doc[template_key] == None:
-                new_doc[template_key] = curr_doc[doc_key]
+                new_val = curr_doc[doc_key]
+
+                # Any dates must converted into a uniform format
+                if re.match(self.date_key_pattern, template_key):
+                    new_val = self.__get_converted_date(new_val)
+
+                new_doc[template_key] = new_val
 
 
     def __get_category_tag(self, archive_dir):
@@ -201,7 +233,7 @@ class MetaMapper:
 
         Parameters: archive_dir (str):         
 
-        Returns: category_tag as a string.
+        Returns: category_tag as a string, or None if no match.
 
         """
 
@@ -210,7 +242,28 @@ class MetaMapper:
             # case-insensitive match.
             if re.match(pattern, archive_dir, re.IGNORECASE):
                 return category_tag
+
+        return None
       
+
+    def __get_converted_date(self, init_date):
+
+        """
+
+        Convert date strings into a uniform format.
+
+        Parameters:
+            init_date (str): The date string we're starting with.
+
+        Returns:
+            new_date (str): The date string in the desired format.
+
+        """
+
+        new_dt = date_parser.parse(init_date).replace(hour=12, minute=0, second=0, microsecond=0)
+        new_dt_str = new_dt.strftime(self.date_format)
+        return new_dt_str
+
 
     def __get_curr_doc(self, archive_dir, doc_filename):
 
