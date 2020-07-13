@@ -200,12 +200,15 @@ class MetaMapper:
             if template_key == self.user_metadata_key:
                 continue
 
+            # Get the value of the doc_key in the current document.
+            curr_doc_val = self.__get_curr_doc_val(curr_doc, doc_key)
+
             # If the new doc already has a value for this key, but the curr doc has a different
             # value, and both are not None, raise a ValueError (To be caught and logged, not to
-            # crash the program. 
+            # crash the program.) 
             if ((template_key in new_doc and new_doc[template_key] != None) and
-                (doc_key in curr_doc and curr_doc[doc_key] != None) and 
-                new_doc[template_key] != curr_doc[doc_key]):
+                curr_doc_val != None and 
+                new_doc[template_key] != curr_doc_val):
                 raise ValueError(f"Error: conflicting values for {template_key}")
  
  
@@ -213,13 +216,12 @@ class MetaMapper:
             # current doc.
 
             if template_key in new_doc and new_doc[template_key] == None:
-                new_val = curr_doc[doc_key]
 
                 # Any dates must converted into a uniform format
                 if re.match(self.date_key_pattern, template_key):
-                    new_val = self.__get_converted_date(new_val)
+                    curr_doc_val = self.__get_converted_date(curr_doc_val)
 
-                new_doc[template_key] = new_val
+                new_doc[template_key] = curr_doc_val
 
 
     def __get_category_tag(self, archive_dir):
@@ -289,15 +291,58 @@ class MetaMapper:
         with open(doc_filepath) as f:
             curr_doc = json.load(f)
 
-        # TBD: Remove this Horrible, depressing, and embarrassing hack!!
-        if doc_filename.startswith('gt'):
-            curr_doc = curr_doc["project"]
-
         # Convert keys to snake_case using list comprehension
         curr_doc = { self.__to_snake_case(k): v for k, v in curr_doc.items() }
 
+        # Clear any saved sub-dictionaries from previous documents
+        self.sub_dicts = {}
+
         return curr_doc
         
+
+    def __get_curr_doc_val(self, curr_doc, doc_key):
+
+        """
+
+        Get the value for a key in a given document.
+
+        Parameters:
+            curr_doc (dict): The current document.
+            doc_key (str): The document key from the config file.
+
+        Returns: Value of the key in the doc as a str, or None if key not in doc.
+
+        """
+
+        # If the key we want is nested in a sub-dictionary within the document, this will
+        # be denoted by a '>' symbol in the doc_key. 
+
+        if '>' not in doc_key:
+            # No nesting involved, just get the value.
+            try:
+                return curr_doc[doc_key]
+            except KeyError:
+                # doc_key not in current document
+                return None            
+
+        # From here we're dealing with a nested dict. For now, we'll only handle one
+        # level of nesting. Split on the '>' and trim any whitespace.
+        top_key, sub_key = [val.strip() for val in doc_key.split('>')]
+        
+        # If the curr doc doesn't actually have the top_key, or it does but the value isn't
+        # a dictionary, stop.
+        if top_key not in curr_doc or type(curr_doc[top_key]) != dict:
+            return None
+
+   
+        # We'll need to load the sub-dict with alll its keys in snake_case. Also, we may need
+        # this sub_dict on subsequent calls, so we want to save the results.
+        if top_key not in self.sub_dicts:
+            self.sub_dicts[top_key] = { self.__to_snake_case(k): v for k, v in curr_doc[top_key].items() }        
+
+        val = self.sub_dicts[top_key][sub_key]
+        return val
+
 
     def __to_snake_case(self, val):
 
