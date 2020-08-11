@@ -4,12 +4,16 @@
 """
 
 import configparser
+from datetime import datetime
 import dateutil.parser as date_parser
 import json
 import os
 from pathlib import Path
 import re
 
+from metadata_mongo_ingester import MetadataMongoIngester
+#import MetadataMongoIngester
+from system_groups_finder import SystemGroupsFinder
 
 class MetaMapper:
 
@@ -42,13 +46,36 @@ class MetaMapper:
         self.defaults_tag = self.config["format"]["defaults_tag"]
 
         # The categories section of the config maps file path patterns to the various 
-        # kinds of metadata.
+        # kinds of metadata. Patterns to be excluded are found in a comma-delimited list in the config.
         self.categories = self.config["categories"]
+        self.exclude_patterns = self.categories["exclude_patterns"].split(',')
 
         # The dates section tells uys how to recognize date fields and how to format them.
         self.date_key_pattern = self.config["dates"]["date_key_pattern"]
         self.date_format = self.config["dates"]["date_format"]
  
+        # Get an instance of the SystemGroupsFinder
+        self.system_groups_finder = SystemGroupsFinder.SystemGroupsFinder()
+        self.system_groups_key = self.config["format"]["system_groups_key"]
+
+        # Save the name of the user_id and manager_user_id key
+        self.manager_user_id_key = self.config["format"]["manager_user_id_key"]
+        self.user_id_key = self.config["format"]["user_id_key"]
+        self.sgf_manager_userid = self.config["format"]["sgf_manager_user_id_key"]
+
+        # Save the name of the date key
+        self.date_key = self.config["format"]["date_key"]        
+
+        # Save the name of the archive root
+        self.archive_path_key = self.config["format"]["archive_path_key"]
+        self.archive_root = self.config["format"]["archive_root"]
+
+
+        # Get an instance of the MetadataMongoIngester and open a MongoDB collection
+        self.metadata_ingester = MetadataMongoIngester.MetadataMongoIngester()
+        self.metadata_ingester.open_connection()
+
+
     def create_new_document(self, archive_dir):
 
         """
@@ -83,18 +110,33 @@ class MetaMapper:
 
             # Get the section of the config file to seek by combining the category and doc tags.
             section_tag = category_tag + '_' + doc_tag
+            if section_tag not in self.config:
+                # This kind of metadata doc is not yet handled for this category
+                continue
 
             # Add vals from curr doc to new doc
             try:
                 self.__add_vals_from_curr_doc(new_doc, section_tag, curr_doc)
             except ValueError as e:
-                print(f"Key error for {archive_dir}: {str(e)}")
+                print(f"Key error for {archive_dir}:new_doc {str(e)}")
              
             # Tuck curr doc into user_data field, if specified in the config file.
             self.__add_user_metadata(new_doc, section_tag, curr_doc)
 
+            # Add the system groups
+            new_doc[self.system_groups_key] = self.system_groups_finder.get_groups_from_entire_doc(curr_doc)
+
+        # Add archive_path if needed
+        self.__add_archive_path(new_doc, archive_dir)
+
+        # Add date if needed
+        self.__add_date(new_doc, archive_dir)
+
         # Add any known constants
         self.__add_default_vals(new_doc)
+
+        # Ingest the document into mongo collection
+        self.metadata_ingester.ingest_document(new_doc)
 
         return new_doc
 
@@ -106,6 +148,59 @@ class MetaMapper:
 
     """
 
+    def __add_archive_path(self, new_doc, archive_dir):
+
+        """
+
+        Add a given archive directory to the doc if it doesn't already have an archive_path
+        
+        Parameters:
+            new_doc (dict): The new dictionary being populated.
+            archive_dir (str): A directory in the archive
+
+        Returns: None
+        
+        """
+
+        # If the doc already has an archive_path, do nothing
+        if new_doc[self.archive_path_key]:
+            return
+
+        # If the directory doesn't start with the archive root or isn't a valid directory, do nothing.
+        if not archive_dir.startswith(self.archive_root) or not os.path.isdir(archive_dir):
+            return
+
+        new_doc[self.archive_path_key] = archive_dir
+
+
+    def __add_date(self, new_doc, archive_dir):
+
+        """
+
+        If the doc doesn't have a date, the last modified date of the given archive dir.
+
+        Parameters:
+            new_doc (dict): The new dictionary being populated.
+            archive_dir (str): A directory in the archive
+
+        Returns: None
+
+        """
+
+        # If the doc already has a date, do nothing
+        if new_doc[self.date_key]:
+            return        
+
+        # If the directory doesn't start with the archive root or isn't a valid directory, do nothing.
+        if not archive_dir.startswith(self.archive_root) or not os.path.isdir(archive_dir):
+            return
+
+        # Get the directory's lat modified, convert to datetime as a string
+        mod_date = str(datetime.fromtimestamp(os.path.getmtime(archive_dir)))
+
+        # Convert the date to the desired format and assign it to the new_doc's date key
+        new_doc[self.date_key] = self.__get_converted_date(mod_date)
+        
 
     def __add_default_vals(self, new_doc):
 
@@ -118,7 +213,8 @@ class MetaMapper:
         be zero as an integer, while "str:None" means the value is the string "None", not just None.
         Will not add the value if the doc aalready has one.
 
-        Parameters: new_doc (dict). The new dictionary being populated.
+        Parameters:
+            new_doc (dict): The new dictionary being populated.
 
         Returns: None
 
@@ -212,7 +308,7 @@ class MetaMapper:
                 raise ValueError(f"Error: conflicting values for {template_key}")
  
  
-            # If the new doc doesn't already have a value for this key,use the value from the
+            # If the new doc doesn't already have a value for this key, use the value from the
             # current doc.
 
             if template_key in new_doc and new_doc[template_key] == None:
@@ -221,7 +317,15 @@ class MetaMapper:
                 if re.match(self.date_key_pattern, template_key):
                     curr_doc_val = self.__get_converted_date(curr_doc_val)
 
-                new_doc[template_key] = curr_doc_val
+                # Manager user_id must be looked up in the SystemGroupsFinder
+                if template_key == self.manager_user_id_key or template_key == self.user_id_key:
+                    target_key = self.sgf_manager_userid
+
+                    new_doc[template_key] = self.system_groups_finder.get_other_info_from_group(
+                        target_key, curr_doc_val, target_key)
+
+                else:
+                    new_doc[template_key] = curr_doc_val
 
 
     def __get_category_tag(self, archive_dir):
@@ -239,13 +343,20 @@ class MetaMapper:
 
         """
 
+        found_category = None
         for pattern, category_tag in self.categories.items():
             # Config parser loads keys as lowercase by default. Easiest fix is a 
             # case-insensitive match.
             if re.match(pattern, archive_dir, re.IGNORECASE):
-                return category_tag
+                found_category = category_tag
+                break
 
-        return None
+        # Ignore any directory that matches any of the exclude patterns
+        for exclude_pattern in self.exclude_patterns:
+            if re.search(exclude_pattern, archive_dir):
+                return None
+    
+        return found_category
       
 
     def __get_converted_date(self, init_date):
