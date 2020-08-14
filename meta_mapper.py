@@ -70,6 +70,11 @@ class MetaMapper:
         self.archive_path_key = self.config["format"]["archive_path_key"]
         self.archive_root = self.config["format"]["archive_root"]
 
+        # Save the name of the source_path key
+        self.source_path_key = self.config["format"]["source_path_key"]
+
+        # Save the name of the directory name key
+        self.dirname_key = self.config["format"]["dirname_key"]
 
         # Get an instance of the MetadataMongoIngester and open a MongoDB collection
         self.metadata_ingester = MetadataMongoIngester.MetadataMongoIngester()
@@ -99,9 +104,15 @@ class MetaMapper:
         if not category_tag:
             return # This kind of metadata is not yet handled.
 
+        # Track whether we found a useable metadata document
+        useable_doc_found = False
+
         # Seek and read any metadata docs in the directory named in the config file.
         for doc_tag, doc_filename in self.config["doc_names"].items():
             
+            # If the directory name is part of the metadata filename, expand it.
+            doc_filename = self.__expand_dirname_for_filename(doc_filename, archive_dir)
+
             # Load json doc with keys converted to snake_case.
             curr_doc = self.__get_curr_doc(archive_dir, doc_filename)
             if not curr_doc:
@@ -114,6 +125,9 @@ class MetaMapper:
                 # This kind of metadata doc is not yet handled for this category
                 continue
 
+            # We have found a useable doc
+            useable_doc_found = True
+
             # Add vals from curr doc to new doc
             try:
                 self.__add_vals_from_curr_doc(new_doc, section_tag, curr_doc)
@@ -124,13 +138,25 @@ class MetaMapper:
             self.__add_user_metadata(new_doc, section_tag, curr_doc)
 
             # Add the system groups
-            new_doc[self.system_groups_key] = self.system_groups_finder.get_groups_from_entire_doc(curr_doc)
+            self.__add_groups_from_doc(new_doc, curr_doc)
+
+        # Do nothing if the archive dir had no useable metadata document
+        if not useable_doc_found:
+            return None
 
         # Add archive_path if needed
         self.__add_archive_path(new_doc, archive_dir)
 
         # Add date if needed
         self.__add_date(new_doc, archive_dir)
+
+        # Add system groups if needed
+        self.__add_groups_from_path(new_doc, archive_dir)
+
+        # For now, limit any docs with multiple source paths to just the first one
+        srcs = new_doc[self.source_path_key]
+        if type(srcs) == list and len(srcs) > 0:
+            new_doc[self.source_path_key] = srcs[0]
 
         # Add any known constants
         self.__add_default_vals(new_doc)
@@ -169,6 +195,8 @@ class MetaMapper:
         # If the directory doesn't start with the archive root or isn't a valid directory, do nothing.
         if not archive_dir.startswith(self.archive_root) or not os.path.isdir(archive_dir):
             return
+        # Clear any saved sub-dictionaries from previous documents
+        self.sub_dicts = {}
 
         new_doc[self.archive_path_key] = archive_dir
 
@@ -177,7 +205,7 @@ class MetaMapper:
 
         """
 
-        If the doc doesn't have a date, the last modified date of the given archive dir.
+        If the doc doesn't have a date, use the last modified date of the given archive dir.
 
         Parameters:
             new_doc (dict): The new dictionary being populated.
@@ -201,6 +229,59 @@ class MetaMapper:
         # Convert the date to the desired format and assign it to the new_doc's date key
         new_doc[self.date_key] = self.__get_converted_date(mod_date)
         
+
+    def __add_groups_from_doc(self, new_doc, curr_doc):
+
+        """
+
+        Try to determine system_groups from the current document.
+
+        Parameters:
+            new_doc (dict): The new dictionary being populated.
+            curr_doc (dic)): 
+
+        Returns: None
+
+        """
+
+        # Scan the whole doc to find info about groups.
+        groups = self.system_groups_finder.get_groups_from_entire_doc(curr_doc)
+
+        # If we found None, check any sub-dicts we may have saved.
+        if not groups and self.sub_dicts:
+            for key, sub_dict in self.sub_dicts.items():
+                groups = self.system_groups_finder.get_groups_from_entire_doc(sub_dict)
+                if groups:
+                    break 
+
+        # Assign whatever we found, even if it's None.
+        new_doc[self.system_groups_key] = groups
+
+
+
+    def __add_groups_from_path(self, new_doc, archive_dir):
+
+        """
+
+        If the doc doesn't have a val for system_groups, try to find one from the archive path
+        Parameters:
+            new_doc (dict): The new dictionary being populated.
+            archive_dir (str): A directory in the archive
+
+        Returns: None
+
+        """
+
+        # If the doc already has groups, do nothing
+        if new_doc[self.system_groups_key]:
+            return
+
+        # If the directory doesn't start with the archive root or isn't a valid directory, do nothing.
+        if not archive_dir.startswith(self.archive_root) or not os.path.isdir(archive_dir):
+            return
+
+        new_doc[self.system_groups_key] = self.system_groups_finder.search_archived_path_for_group_name(archive_dir, "system_groups")
+
 
     def __add_default_vals(self, new_doc):
 
@@ -276,7 +357,7 @@ class MetaMapper:
 
     def __add_vals_from_curr_doc(self, new_doc, section_tag, curr_doc):
 
-        """
+        """ALL_CT_ARCHIVE
         Add values to the new doc from fields in the current doc specified in the config file.
 
         Parameters:
@@ -290,42 +371,67 @@ class MetaMapper:
         """
 
         # Check this doc's section in the config file to determine which of its keys we want.
-        for template_key, doc_key in self.config[section_tag].items():
+        for template_key, doc_keys in self.config[section_tag].items():
+            for doc_key in doc_keys.split(','):
+                # Hack: we don't want to process the user_metadata key here.
+                if template_key == self.user_metadata_key:
+                    continue
 
-            # Hack: we don't want to process the user_metadata key here.
-            if template_key == self.user_metadata_key:
-                continue
+                # Get the value of the doc_key in the current document. If None, skip.
+                curr_doc_val = self.__get_curr_doc_val(curr_doc, doc_key)
+                if not curr_doc_val:
+                    continue
 
-            # Get the value of the doc_key in the current document.
-            curr_doc_val = self.__get_curr_doc_val(curr_doc, doc_key)
-
-            # If the new doc already has a value for this key, but the curr doc has a different
-            # value, and both are not None, raise a ValueError (To be caught and logged, not to
-            # crash the program.) 
-            if ((template_key in new_doc and new_doc[template_key] != None) and
-                curr_doc_val != None and 
-                new_doc[template_key] != curr_doc_val):
-                raise ValueError(f"Error: conflicting values for {template_key}")
+                # If the new doc already has a value for this key, but the curr doc has a different
+                # value, and both are not None, raise a ValueError (To be caught and logged, not to
+                # crash the program.) 
+                if ((template_key in new_doc and new_doc[template_key] != None) and
+                    curr_doc_val != None and 
+                    new_doc[template_key] != curr_doc_val):
+                    raise ValueError(f"Warning: conflicting values for {template_key}")
  
- 
-            # If the new doc doesn't already have a value for this key, use the value from the
-            # current doc.
+                # If the new doc doesn't already have a value for this key, use the value from the
+                # current doc.
 
-            if template_key in new_doc and new_doc[template_key] == None:
+                if template_key in new_doc and new_doc[template_key] == None:
 
-                # Any dates must converted into a uniform format
-                if re.match(self.date_key_pattern, template_key):
-                    curr_doc_val = self.__get_converted_date(curr_doc_val)
+                    # Any dates must converted into a uniform format
+                    if re.match(self.date_key_pattern, template_key):
+                        curr_doc_val = self.__get_converted_date(curr_doc_val)
 
-                # Manager user_id must be looked up in the SystemGroupsFinder
-                if template_key == self.manager_user_id_key or template_key == self.user_id_key:
-                    target_key = self.sgf_manager_userid
+                    # Manager user_id must be looked up in the SystemGroupsFinder
+                    if template_key == self.manager_user_id_key or template_key == self.user_id_key:
+                        target_key = self.sgf_manager_userid
 
-                    new_doc[template_key] = self.system_groups_finder.get_other_info_from_group(
-                        target_key, curr_doc_val, target_key)
+                        new_doc[template_key] = self.system_groups_finder.get_other_info_from_group(
+                            target_key, curr_doc_val, target_key)
 
-                else:
-                    new_doc[template_key] = curr_doc_val
+                    else:
+                        new_doc[template_key] = curr_doc_val
+
+
+    def __expand_dirname_for_filename(self, doc_filename, archive_dir):
+
+        """
+
+        If the filename has the "dirname" string in it, expand it with the actual directory name.
+
+        Parameters:
+            doc_filename: (str): The filename of the metadata document.
+            archive_dir: (str): 
+
+        Returns:
+            doc_filename: (str):  The filename of the metadata document, expanded if needed
+
+        """
+
+        if not doc_filename.startswith(self.dirname_key):
+            return doc_filename
+
+        # Get the last part of the directory path, replace in filename
+        basedir = os.path.basename(os.path.normpath(archive_dir))
+        doc_filename = doc_filename.replace(self.dirname_key, basedir)
+        return doc_filename
 
 
     def __get_category_tag(self, archive_dir):
@@ -343,20 +449,18 @@ class MetaMapper:
 
         """
 
-        found_category = None
-        for pattern, category_tag in self.categories.items():
-            # Config parser loads keys as lowercase by default. Easiest fix is a 
-            # case-insensitive match.
-            if re.match(pattern, archive_dir, re.IGNORECASE):
-                found_category = category_tag
-                break
-
         # Ignore any directory that matches any of the exclude patterns
         for exclude_pattern in self.exclude_patterns:
             if re.search(exclude_pattern, archive_dir):
                 return None
-    
-        return found_category
+
+        for pattern, category_tag in self.categories.items():
+            # Config parser loads keys as lowercase by default. Easiest fix is a 
+            # case-insensitive match.
+            if re.match(pattern, archive_dir, re.IGNORECASE):
+                return category_tag
+
+        return None
       
 
     def __get_converted_date(self, init_date):
@@ -392,6 +496,9 @@ class MetaMapper:
 
         """
 
+        # Clear any saved sub-dictionaries from previous documents
+        self.sub_dicts = {}
+
         # Look for doc
         doc_filepath = os.path.join(archive_dir, doc_filename)
         if not os.path.isfile(doc_filepath):
@@ -404,9 +511,6 @@ class MetaMapper:
 
         # Convert keys to snake_case using list comprehension
         curr_doc = { self.__to_snake_case(k): v for k, v in curr_doc.items() }
-
-        # Clear any saved sub-dictionaries from previous documents
-        self.sub_dicts = {}
 
         return curr_doc
         
