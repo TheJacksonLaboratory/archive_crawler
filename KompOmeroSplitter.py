@@ -1,5 +1,11 @@
+import configparser
+from datetime import datetime
+import dateutil.parser as date_parser
 import json
+import os
+from pathlib import Path
 import re
+import subprocess
 
 from meta_mapper import MetaMapper
 from metadata_mongo_ingester import MetadataMongoIngester
@@ -18,8 +24,11 @@ class KompOmeroSplitter:
             ingester (MetadataMongoIngester): An instance of the ingester with an
                 open connection
 
-    Returns:
-        None
+
+        Returns:
+            None
+
+        """
 
         # Get the source directory where this script resides. Find and read the named 
         # config file.
@@ -72,7 +81,7 @@ class KompOmeroSplitter:
 
         # First find and load the master json file.
         md_filename = archive_dir + os.path.join(archive_dir, 
-            self.config["omero"]["omero_filename"]
+            self.config["omero"]["omero_filename"])
         assert os.path.isfile(md_filename)
         with open(md_filename) as f:
             main_doc = json.load(f)
@@ -100,7 +109,7 @@ class KompOmeroSplitter:
             # Get a fresh copy of the template from the mapper.
             new_doc = self.mapper.get_blank_template()
 
-            new_doc["archival_status" = "completed"
+            new_doc["archival_status"] = "completed"
             new_doc["archived_path"] = new_path
             new_doc["archived_size"] = archived_size
             new_doc["date_archived"] = mtime_str
@@ -113,14 +122,16 @@ class KompOmeroSplitter:
             self.ingester.ingest_document(new_doc)
     
 
-   def __get_date_str(self, archive_dir):
+    def __get_date_str(self, archive_dir):
 
         """
+
         Get the mtime of the archive dir and convert it to the desired format.
         Parameters:
             init_date (str): The date string we're starting with.
         Returns:
             new_date (str): The date string in the desired format.
+
         """
 
         # Get the directory's lat modified, convert to datetime as a string

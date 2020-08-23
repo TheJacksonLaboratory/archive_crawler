@@ -7,12 +7,6 @@ from meta_mapper import MetaMapper
 from metadata_mongo_ingester import MetadataMongoIngester
 from KompOmeroSplitter import KompOmeroSplitter
 
-#dirs = [ "/archive/GT/legacy/150611_D00138_0249_AHMMHKADXX_Project_15NGS-001-jxb/CHU1351",
-#         "/archive/GT/2020/JacquesBanchereau_Lab_CT/20200106_19-banchereau-049"]
-
-mapper = MetaMapper()
-
-
 class ArchiveCrawler:
 
     def __init__(self, mode, root_dir):
@@ -32,6 +26,7 @@ class ArchiveCrawler:
         # Check that mode is "dev" or "prod" and the given root dir is valid 
         assert mode in ["dev", "prod"]
         assert os.path.isdir(root_dir)
+        self.root_dir = root_dir
 
         # Get an instance of the MetadataMongoIngester and open a MongoDB collection
         self.ingester = MetadataMongoIngester.MetadataMongoIngester()
@@ -41,13 +36,14 @@ class ArchiveCrawler:
         self.meta_mapper = MetaMapper.MetaMapper()
 
         # Get an instance of the KompOmeroSplitter
-        self.omero_splitter = KompOmeroSplitter(mapper, ingester)
+        self.omero_splitter = KompOmeroSplitter(self.meta_mapper, self.ingester)
 
+       
 
     def crawl_archive(self):
 
 
-        for dir in self.get_json_dirs(root_dir):
+        for dir in self.get_json_dirs(self.root_dir):
 
             # Get a document in our new template format populated with values from any
             # metadata found in this directory. If no document is made, skip this directory.
@@ -61,7 +57,7 @@ class ArchiveCrawler:
                 continue
                
             # Ingest the document into mongo the collection
-            self.metadata_ingester.ingest_document(new_doc)
+            self.ingester.ingest_document(new_doc)
 
 
     def get_json_dirs(self, root_dir):
@@ -99,6 +95,7 @@ if __name__ == "__main__":
     parser.add_argument("-d", "--root-dir", help="root directory to begin crawl", type=str, default="/archive")
     args = parser.parse_args()
 
-    crawler = ArcihveCrawler(args.mode, args.root_dir)
+    crawler = ArchiveCrawler(args.mode, args.root_dir)
+    crawler.crawl_archive()
         
     
