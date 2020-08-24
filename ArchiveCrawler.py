@@ -87,9 +87,10 @@ if __name__ == "__main__":
 
     #  Allow command line arguments for mode and root directory
     parser = argparse.ArgumentParser(
-        description="Crawl archive directories, map metadata into a new format, and ingest it into MongoDB",
-        prog="ArchiveCrawler.py"
-    )
+        description="Crawl archive directories, map metadata into a standardized format, and ingest into MongoDB",
+        prog="ArchiveCrawler.py", 
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
     parser.add_argument("-m", "--mode", help="dev or prod for development or production DB", type=str,
         default="dev")
     parser.add_argument("-d", "--root-dir", help="root directory to begin crawl", type=str, default="/archive")
