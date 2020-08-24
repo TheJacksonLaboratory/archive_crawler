@@ -42,8 +42,24 @@ class ArchiveCrawler:
 
     def crawl_archive(self):
 
+        """
+
+        Crawl all directories beneath the root, map any jsons found to a template, and ingest them.
+
+        Parameters:
+            None
+
+        Returns:
+            None
+
+        """
 
         for dir in self.get_json_dirs(self.root_dir):
+
+            # Handle the omero data separately
+            if self.omero_splitter.is_komp_omero_dir(dir):
+                self.omero_splitter.split_doc(dir)
+                continue
 
             # Get a document in our new template format populated with values from any
             # metadata found in this directory. If no document is made, skip this directory.
@@ -51,11 +67,6 @@ class ArchiveCrawler:
             if not new_doc:
                 continue
 
-            # Handle the omero data separately
-            if self.omero_splitter.is_komp_omero_dir(dir):
-                self.omero_splitter.split_doc(dir)
-                continue
-               
             # Ingest the document into mongo the collection
             self.ingester.ingest_document(new_doc)
 
