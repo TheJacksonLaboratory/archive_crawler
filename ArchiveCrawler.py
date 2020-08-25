@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import socket
 
 from meta_mapper import MetaMapper
 from metadata_mongo_ingester import MetadataMongoIngester
@@ -42,8 +43,24 @@ class ArchiveCrawler:
 
     def crawl_archive(self):
 
+        """
+
+        Crawl all directories beneath the root, map any jsons found to a template, and ingest them.
+
+        Parameters:
+            None
+
+        Returns:
+            None
+
+        """
 
         for dir in self.get_json_dirs(self.root_dir):
+
+            # Handle the omero data separately
+            if self.omero_splitter.is_komp_omero_dir(dir):
+                self.omero_splitter.split_doc(dir)
+                continue
 
             # Get a document in our new template format populated with values from any
             # metadata found in this directory. If no document is made, skip this directory.
@@ -51,11 +68,10 @@ class ArchiveCrawler:
             if not new_doc:
                 continue
 
-            # Handle the omero data separately
-            if self.omero_splitter.is_komp_omero_dir(dir):
-                self.omero_splitter.split_doc(dir)
-                continue
-               
+            # Adjust the archive path if we're on a BH server
+            if socket.gethostname().startswith('bh'):
+                new_doc["archived_path"] = new_doc["archived_path"].replace('/archive', '/bharchive')
+
             # Ingest the document into mongo the collection
             self.ingester.ingest_document(new_doc)
 

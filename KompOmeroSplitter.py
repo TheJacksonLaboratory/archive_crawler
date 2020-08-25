@@ -80,7 +80,7 @@ class KompOmeroSplitter:
         """
 
         # First find and load the master json file.
-        md_filename = archive_dir + os.path.join(archive_dir, 
+        md_filename = os.path.join(archive_dir, 
             self.config["omero"]["omero_filename"])
         assert os.path.isfile(md_filename)
         with open(md_filename) as f:
@@ -93,18 +93,20 @@ class KompOmeroSplitter:
         # number of keys we found in the main doc. This is not exactly right, as there could be 
         # some variation in size of the sub-docs, but we have no way to know that or what the 
         # variance would be, so this will have to suffice.
-        archived_size= int(subprocess.check_output(
-            ["du", "-sb", archive_dir]).split()[0].decode("utf-8")) / len(main_doc)
+        archived_size= int(int(subprocess.check_output(
+            ["du", "-sb", archive_dir]).split()[0].decode("utf-8")) / len(main_doc))
 
         # Split the doc by its keys
-        for omero_key, sub_doc in main_doc:
-            if not re.match(self.omero_pattern, key):
+        for omero_key, sub_doc in main_doc.items():
+            if not re.match(self.omero_pattern, omero_key):
+                print(f"No pattern match for key {omero_key}")
                 continue        
 
             # The val for each key is a dictionary, which is what we want to ingest
             # as a sub-doc. Add they key to the directory where the file was found, and 
             # use it as our archivedPath. Turn the ': " in the key to an underscore.
-            new_path = os.path.join(dir, key.replace(": ", "_"))
+            new_path = os.path.join(archive_dir.replace('/archive', '/bharchive'),
+                omero_key.replace(": ", "_"))
             
             # Get a fresh copy of the template from the mapper.
             new_doc = self.mapper.get_blank_template()
@@ -112,12 +114,17 @@ class KompOmeroSplitter:
             new_doc["archival_status"] = "completed"
             new_doc["archived_path"] = new_path
             new_doc["archived_size"] = archived_size
+            new_doc["classification"] = ""
             new_doc["date_archived"] = mtime_str
-            
+            new_doc["grant_id"] = ""
+            new_doc["manager_user_id"] = ""
+            new_doc["notes"] = ""
+            new_doc["project_name"] = ""
             new_doc["source_size"] = None
             # The omero data is considered communal. As such, "jaxuser" is the correct group.
             new_doc["system_groups"] = ["jaxuser"]
             new_doc["user_metadata"] = sub_doc
+            new_doc["user_id"] = ""
 
             self.ingester.ingest_document(new_doc)
     
@@ -138,7 +145,7 @@ class KompOmeroSplitter:
         mod_date = str(datetime.fromtimestamp(os.path.getmtime(archive_dir)))
 
         new_dt = date_parser.parse(mod_date).replace(hour=12, minute=0, second=0, microsecond=0)
-        new_dt_str = new_dt.strftime("%%Y-%%m-%%d")
+        new_dt_str = new_dt.strftime("%Y-%m-%d")
         return new_dt_str
 
 
