@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import socket
 
 from meta_mapper import MetaMapper
 from metadata_mongo_ingester import MetadataMongoIngester
@@ -66,6 +67,10 @@ class ArchiveCrawler:
             new_doc = self.meta_mapper.create_new_document(dir)
             if not new_doc:
                 continue
+
+            # Adjust the archive path if we're on a BH server
+            if socket.gethostname().startswith('bh'):
+                new_doc["archived_path"] = new_doc["archived_path"].replace('/archive', '/bharchive')
 
             # Ingest the document into mongo the collection
             self.ingester.ingest_document(new_doc)
