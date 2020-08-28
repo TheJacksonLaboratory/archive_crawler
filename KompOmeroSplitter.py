@@ -120,6 +120,7 @@ class KompOmeroSplitter:
             new_doc["manager_user_id"] = ""
             new_doc["notes"] = ""
             new_doc["project_name"] = ""
+            new_doc["source_path"] = ""
             new_doc["source_size"] = None
             # The omero data is considered communal. As such, "jaxuser" is the correct group.
             new_doc["system_groups"] = ["jaxuser"]
