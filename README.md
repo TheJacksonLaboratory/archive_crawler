@@ -1,6 +1,31 @@
 # archive_crawler
 Crawl the archive, create standardized metadata from existing documents, and ingest it into MongoDB.
 
-Setup / Run Environment
+## Setup / Run Environment
 
-The archive crawler requires that three other JAX github repositories be installed in a virtual environment. These are the [system_groups_finder](https://github.com/TheJacksonLaboratory/system_groups_finder), the [meta_mapper](https://github.com/TheJacksonLaboratory/meta_mapper), and the [metadata_mongo_ingester](https://github.com/TheJacksonLaboratory/metadata_mongo_ingester).
+The archive crawler requires that three other JAX github repositories be installed in a virtual environment that uses python 3.6+. These are the [system_groups_finder](https://github.com/TheJacksonLaboratory/system_groups_finder), the [meta_mapper](https://github.com/TheJacksonLaboratory/meta_mapper), and the [metadata_mongo_ingester](https://github.com/TheJacksonLaboratory/metadata_mongo_ingester). On most of our servers, you can do this with the following commands:
+```
+$ python3 -m venv myenv
+$ source myenv/bin/activate
+(myenv) $ python -m pip install git+https://<github_username>:<access_token>@github.com/TheJacksonLaboratory/system_groups_finder
+(myenv) $ python -m pip install git+https://<github_username>:<access_token>@github.com/TheJacksonLaboratory/meta_mapper
+(myenv) $ python -m pip install git+https://<github_username>:<access_token>@github.com/TheJacksonLaboratory/metadata_mongo_ingester
+```
+
+
+## Usage
+```
+(myenv) $ python ArchiveCrawler.py --help
+usage: ArchiveCrawler.py [-h] [-m MODE] [-d ROOT_DIR]
+
+Crawl archive directories, map metadata into a standardized format, and ingest
+into MongoDB
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -m MODE, --mode MODE  dev or prod for development or production DB (default:
+                        dev)
+  -d ROOT_DIR, --root-dir ROOT_DIR
+                        root directory to begin crawl (default: /archive)
+```
+
