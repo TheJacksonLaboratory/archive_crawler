@@ -26,7 +26,7 @@ into MongoDB
 
 optional arguments:
   -h, --help            show this help message and exit
-  -m MODE, --mode MODE  dev or prod for development or production DB (default:
+  -m MODE, --mode MODE  "dev" or "prod" for development or production DB (default:
                         dev)
   -d ROOT_DIR, --root-dir ROOT_DIR
                         root directory to begin crawl (default: /archive)
