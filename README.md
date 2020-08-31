@@ -1,6 +1,8 @@
 # archive_crawler
 Crawl the archive, create standardized metadata from existing documents, and ingest it into MongoDB.
 
+## Description
+Given a root archive directory, the crawler will seek all sub-directories containing potential metadata (json files). It will use the [meta_mapper](https://github.com/TheJacksonLaboratory/meta_mapper) to map the contents of these files into a standardized format, as well as the[system_groups_finder](https://github.com/TheJacksonLaboratory/system_groups_finder) to establish ownership, I.e.
 ## Setup / Run Environment
 
 The archive crawler requires that three other JAX github repositories be installed in a virtual environment that uses python 3.6+. These are the [system_groups_finder](https://github.com/TheJacksonLaboratory/system_groups_finder), the [meta_mapper](https://github.com/TheJacksonLaboratory/meta_mapper), and the [metadata_mongo_ingester](https://github.com/TheJacksonLaboratory/metadata_mongo_ingester). On most of our servers, you can do this with the following commands:
@@ -29,3 +31,4 @@ optional arguments:
                         root directory to begin crawl (default: /archive)
 ```
 
+## 
