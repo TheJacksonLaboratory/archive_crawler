@@ -32,4 +32,18 @@ optional arguments:
                         root directory to begin crawl (default: /archive)
 ```
 
+### A note about KOMP Omero splitting  
 
+   Omero data for the Knock Out Mouse Project is found beneath the directory `/archive/services/KOMP/omero/adult_lacZ`. The metadata is found in a single 32 Mb Json file. This is too large to ingest into MongoDB as a single document, so we have to split the metadata. The file contains 4,991 sub-dictionaries, where the outer key always follow the following pattern: The word 'ndp' or 'omero', followed by a colon, one space, and 4 to 6 digits. Here are some examples:  
+
+`ndp: 134483`
+
+`omero: 36939` 
+
+   Each sub-dictionary will be ingested as its own document. To do this, we transform the outer key and append it to the archived path by deleting the colon and changing the space to an underscore. Thus, the above examples would have these archived paths:  
+
+`/archive/services/KOMP/omero/adult_lacZ/ndp_134483`
+
+`/archive/services/KOMP/omero/adult_lacZ/omero_36939`
+
+   The final result is 4,991 separate and distinct documents in the database for the KOMP omero data.
