@@ -43,7 +43,8 @@ optional arguments:
 
    Each sub-dictionary will be ingested as its own document. To do this, we transform the outer key and append it to the archived path by deleting the colon and changing the space to an underscore. Thus, the above examples would have these archived paths:  
 
-/archive/services/KOMP/omero/adult_lacZ/ndp_134483
-/archive/services/KOMP/omero/adult_lacZ/omero_36939
+`/archive/services/KOMP/omero/adult_lacZ/ndp_134483`
+
+`/archive/services/KOMP/omero/adult_lacZ/omero_36939`
 
    The final result is 4,991 separate and distinct documents in the database for the KOMP omero data.
