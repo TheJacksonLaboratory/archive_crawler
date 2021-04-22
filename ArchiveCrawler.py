@@ -86,10 +86,10 @@ class ArchiveCrawler:
                 new_doc["archived_path"] = new_doc["archived_path"].replace('/archive', '/bharchive')
 
             # Ingest the document into mongo the collection
-            msg = self.ingester.ingest_document(new_doc)
-            if msg:
+            err_msg = self.ingester.ingest_document(new_doc)
+            if err_msg:
                 # The ingester only returns a message if there was an error.
-                logging.error(f"Could not ingest document to mongo for directory {dir}, error was {error}")
+                logging.error(f"Could not ingest document to mongo for directory {dir}, error was {err_msg}")
             else:
                 logging.info(f"Successfully ingested document for directory {dir}")
 
