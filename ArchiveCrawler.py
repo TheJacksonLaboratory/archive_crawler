@@ -64,7 +64,7 @@ class ArchiveCrawler:
 
             logging.info(f"Scanning dir {dir}")
 
-            if self.skip_dir(dir):
+            if self.skip_directory(dir):
                 logging.info(f"Skipping directory {dir}")
                 continue
 
