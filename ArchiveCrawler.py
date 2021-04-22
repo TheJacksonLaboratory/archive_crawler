@@ -63,6 +63,11 @@ class ArchiveCrawler:
         for dir in self.get_json_dirs(self.root_dir):
 
             logging.info(f"Scanning dir {dir}")
+
+            if self.skip_dir(dir):
+                logging.info(f"Skipping directory {dir}")
+                continue
+
             # Handle the omero data separately
             if self.omero_splitter.is_komp_omero_dir(dir):
                 logging.info("Splitting Omero doc")
@@ -84,7 +89,7 @@ class ArchiveCrawler:
             msg = self.ingester.ingest_document(new_doc)
             if msg:
                 # The ingester only returns a message if there was an error.
-                logging.error(f"Could not ingest document to mongo for directory {dir}")
+                logging.error(f"Could not ingest document to mongo for directory {dir}, error was {error}")
             else:
                 logging.info(f"Successfully ingested document for directory {dir}")
 
@@ -116,7 +121,12 @@ class ArchiveCrawler:
     def setup_logger(self):
 
         """
-        Setup logger
+        Setup logger.
+
+        Parameters: None
+
+        Returns: None
+
         """
 
         # TBD: This could be configurable instead of hard-coded.
@@ -142,6 +152,42 @@ class ArchiveCrawler:
         # Now configure the logger with the established parameters.
         logging.basicConfig(filename=log_path, filemode='w', level=log_level,
             format='%(asctime)s %(levelname)s: %(message)s')
+
+
+    def skip_directory(self, dir):
+
+        """
+        Determine whether to skip a given directory
+
+        Parameters:
+            dir (str): A directory in the archive
+
+        Returns:
+            val (bool): True if the dir should be skipped, false if not.
+
+        """
+
+        # TBD: We could read a list of regular expressions from a config file instead of these
+        # hard-coded values
+        
+        # Skip any test directories or expired accounts
+        if dir.startswith("/archive/test") or dir.startswith("/archive/expired-accounts"):
+            return True
+
+        # Skip any sub-dirs named "test" or "testing", and any dirs beneath those
+        if "/test/" in dir or "/testing/" in dir:
+            return True
+
+        # Skip all .old dirs
+        if dir.endswith(".old") or ".old/" in dir:
+            return True
+
+        # The pbcoretools dirs having nothing of interest to us.
+        if "pbcoretools.tasks" in dir:
+            return True
+
+        return False
+
 
 
 if __name__ == "__main__":
