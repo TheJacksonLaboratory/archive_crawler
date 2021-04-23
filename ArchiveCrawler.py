@@ -85,7 +85,7 @@ class ArchiveCrawler:
             if socket.gethostname().startswith('bh'):
                 new_doc["archived_path"] = new_doc["archived_path"].replace('/archive', '/bharchive')
 
-            ###
+            
             # Ingest the document into mongo the collection
             err_msg = self.ingester.ingest_document(new_doc)
             if err_msg:
@@ -94,7 +94,7 @@ class ArchiveCrawler:
                 logging.debug(f"{json.dumps(json.loads(new_doc, indent = 4))}")
             else:
                 logging.info(f"Successfully ingested document for directory {dir}")
-            ###
+            
 
 
     def get_json_dirs(self, root_dir):
