@@ -77,8 +77,8 @@ class ArchiveCrawler:
             # Get a document in our new template format populated with values from any
             # metadata found in this directory. If no document is made, skip this directory.
             new_doc = self.meta_mapper.create_new_document(dir)
-            if not new_doc:
-                logging.error(f"Could not create new document from directory {dir}")
+            if not new_doc or type(new_doc) == str and new_doc.startswith("ERROR"):
+                logging.error(f"Could not create new document from directory {dir}, error was {new_doc}")
                 continue
 
             # Adjust the archive path if we're on a BH server
